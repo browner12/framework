@@ -136,6 +136,17 @@ abstract class Factory
         $this->afterCreating = $afterCreating ?? new Collection;
         $this->connection = $connection;
         $this->faker = $this->withFaker();
+        $this->setup();
+    }
+
+    /**
+     * Define setup behavior for the factory.
+     *
+     * @return void
+     */
+    public function setup()
+    {
+        //
     }
 
     /**
