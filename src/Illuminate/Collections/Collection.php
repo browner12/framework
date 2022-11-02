@@ -151,6 +151,28 @@ class Collection implements ArrayAccess, CanBeEscapedWhenCastToString, Enumerabl
     }
 
     /**
+     * Bucket items in a collection depending on if they return true or false.
+     *
+     * @param (callable(TValue, TKey): bool)  $callback
+     * @return \Illuminate\Support\Collection
+     */
+    public function bucket(callable $callback)
+    {
+        foreach ($this->items as $key => $item) {
+            if ($callback($item, $key)) {
+                $true[] = $item;
+            } else {
+                $false[] = $item;
+            }
+        }
+
+        return new Collection([
+            new static($true ?? []),
+            new static($false ?? []),
+        ]);
+    }
+
+    /**
      * Collapse the collection of items into a single array.
      *
      * @return static<int, mixed>
