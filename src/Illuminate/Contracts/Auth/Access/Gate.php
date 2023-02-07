@@ -32,15 +32,6 @@ interface Gate
     public function resource($name, $class, array $abilities = null);
 
     /**
-     * Define a policy class for a given class type.
-     *
-     * @param  string  $class
-     * @param  string  $policy
-     * @return $this
-     */
-    public function policy($class, $policy);
-
-    /**
      * Register a callback to run before all Gate checks.
      *
      * @param  callable  $callback
@@ -122,16 +113,6 @@ interface Gate
      * @throws \Illuminate\Auth\Access\AuthorizationException
      */
     public function raw($ability, $arguments = []);
-
-    /**
-     * Get a policy instance for a given class.
-     *
-     * @param  object|string  $class
-     * @return mixed
-     *
-     * @throws \InvalidArgumentException
-     */
-    public function getPolicyFor($class);
 
     /**
      * Get a guard instance for the given user.
