@@ -1027,9 +1027,8 @@ class Mailable implements MailableContract, Renderable
                 : $parts;
         }
 
-        return (new Collection($this->attachments))->contains(
-            fn ($attachment) => $attachment['file'] === $file && array_filter($attachment['options']) === array_filter($options)
-        );
+        return (new Collection($this->attachments))
+            ->contains(fn ($attachment) => $attachment['file'] === $file && array_filter($attachment['options']) === array_filter($options));
     }
 
     /**
@@ -1076,12 +1075,13 @@ class Mailable implements MailableContract, Renderable
      */
     public function attachFromStorageDisk($disk, $path, $name = null, array $options = [])
     {
-        $this->diskAttachments = (new Collection($this->diskAttachments))->push([
-            'disk' => $disk,
-            'path' => $path,
-            'name' => $name ?? basename($path),
-            'options' => $options,
-        ])
+        $this->diskAttachments = (new Collection($this->diskAttachments))
+            ->push([
+                'disk' => $disk,
+                'path' => $path,
+                'name' => $name ?? basename($path),
+                'options' => $options,
+            ])
             ->unique(fn ($file) => $file['name'].$file['disk'].$file['path'])
             ->all();
 

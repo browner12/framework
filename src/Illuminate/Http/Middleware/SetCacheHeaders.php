@@ -88,10 +88,12 @@ class SetCacheHeaders
      */
     protected function parseOptions($options)
     {
-        return (new Collection(explode(';', rtrim($options, ';'))))->mapWithKeys(function ($option) {
-            $data = explode('=', $option, 2);
+        return (new Collection(explode(';', rtrim($options, ';'))))
+            ->mapWithKeys(function ($option) {
+                $data = explode('=', $option, 2);
 
-            return [$data[0] => $data[1] ?? true];
-        })->all();
+                return [$data[0] => $data[1] ?? true];
+            })
+            ->all();
     }
 }
