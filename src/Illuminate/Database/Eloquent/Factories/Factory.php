@@ -51,6 +51,13 @@ abstract class Factory
     protected $states;
 
     /**
+     * The optional transformations that will be applied to the model.
+     *
+     * @var \Illuminate\Support\Collection
+     */
+    protected Collection $optionals;
+
+    /**
      * The parent relationships that will be applied to the model.
      *
      * @var \Illuminate\Support\Collection
@@ -128,6 +135,21 @@ abstract class Factory
     protected static $factoryNameResolver;
 
     /**
+     * @var bool
+     */
+    protected static bool $optionalsEnabled = false;
+
+    public static function enableOptionals(): void
+    {
+        static::$optionalsEnabled = true;
+    }
+
+    public static function disableOptionals(): void
+    {
+        static::$optionalsEnabled = false;
+    }
+
+    /**
      * Create a new factory instance.
      *
      * @param  int|null  $count
@@ -150,7 +172,8 @@ abstract class Factory
         ?Collection $afterCreating = null,
         $connection = null,
         ?Collection $recycle = null,
-        bool $expandRelationships = true
+        bool $expandRelationships = true,
+        ?Collection $optionals = null,
     ) {
         $this->count = $count;
         $this->states = $states ?? new Collection;
@@ -162,6 +185,7 @@ abstract class Factory
         $this->recycle = $recycle ?? new Collection;
         $this->faker = $this->withFaker();
         $this->expandRelationships = $expandRelationships;
+        $this->optionals = $optionals ?? new Collection;
     }
 
     /**
@@ -170,6 +194,14 @@ abstract class Factory
      * @return array<string, mixed>
      */
     abstract public function definition();
+
+    /**
+     * Define the model's default optionals.
+     *
+     * @param  array  $attributes
+     * @return array
+     */
+    abstract public function optionals(array $attributes): array;
 
     /**
      * Get a new factory instance for the given attributes.
@@ -448,7 +480,7 @@ abstract class Factory
      */
     protected function getRawAttributes(?Model $parent)
     {
-        return $this->states->pipe(function ($states) {
+        $attributes = $this->states->pipe(function ($states) {
             return $this->for->isEmpty() ? $states : new Collection(array_merge([function () {
                 return $this->parentResolvers();
             }], $states->all()));
@@ -459,6 +491,24 @@ abstract class Factory
 
             return array_merge($carry, $state($carry, $parent));
         }, $this->definition());
+
+        dump($attributes);
+
+        $optionals = $this->optionals
+            ->reduce(
+                fn ($carry, $item) => array_merge($carry, $item($attributes)),
+                self::$optionalsEnabled ? $this->optionals($attributes) : []
+            );
+
+        foreach($optionals as $field => $closure) {
+            if(true) {
+                $attributes[$field] = $closure();
+            }
+        }
+
+        dump($optionals);
+
+        return $attributes;
     }
 
     /**
@@ -522,6 +572,24 @@ abstract class Factory
                 is_callable($state) ? $state : fn () => $state,
             ]),
         ]);
+    }
+
+    /**
+     * @param  callable|array  $optional
+     * @return static
+     */
+    public function optional(callable|array $optional)
+    {
+        return $this->newInstance([
+            'optionals' => $this->optionals->concat([
+                is_callable($optional) ? $optional : fn () => $optional,
+            ]),
+        ]);
+    }
+
+    public function withOptionals()
+    {
+        return $this->optional($this->optionals(...));
     }
 
     /**
