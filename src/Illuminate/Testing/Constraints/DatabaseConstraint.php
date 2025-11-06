@@ -36,6 +36,16 @@ class DatabaseConstraint extends Constraint
     protected Closure|null $failureConditionalCallback = null;
 
     /**
+     * The fields that should be shown on failure.
+     */
+    protected array $failureFields = [];
+
+    /**
+     * Whether the builder should be stripped when fetching failure results.
+     */
+    protected bool $stripBuilder = true;
+
+    /**
      * The actual table entries count that will be checked against the expected count.
      */
     protected int $actualCount = 0;
@@ -77,6 +87,16 @@ class DatabaseConstraint extends Constraint
     }
 
     /**
+     * Set the fields that should be shown on a failure rather than the defaults.
+     */
+    public function fields(array $fields): static
+    {
+        $this->failureFields = $fields;
+
+        return $this;
+    }
+
+    /**
      * Execute the constraint checking if the builder exists.
      */
     public function exists(): void
@@ -112,6 +132,8 @@ class DatabaseConstraint extends Constraint
         };
 
         $this->showAdditionalFailureDescription = true;
+
+        $this->stripBuilder = false;
 
         $this->runAssertion();
     }
@@ -189,19 +211,25 @@ class DatabaseConstraint extends Constraint
      */
     protected function additionalFailureDescription(mixed $other): string
     {
+        // bail if hidden
         if (!$this->showAdditionalFailureDescription) {
             return '';
         }
 
+        //
         $baseBuilder = clone $this->builder;
         $allWheres = $baseBuilder->wheres;
-        $baseBuilder->wheres = [];
-        $baseBuilder->bindings['where'] = [];
-        $baseBuilder->joins = null;
-        $baseBuilder->groups = null;
-        $baseBuilder->havings = null;
-        $baseBuilder->bindings['join'] = [];
-        $baseBuilder->bindings['having'] = [];
+
+        // strip the builder to its base query
+        if ($this->stripBuilder) {
+            $baseBuilder->wheres = [];
+            $baseBuilder->joins = null;
+            $baseBuilder->groups = null;
+            $baseBuilder->havings = null;
+            $baseBuilder->bindings['where'] = [];
+            $baseBuilder->bindings['join'] = [];
+            $baseBuilder->bindings['having'] = [];
+        }
 
         // the table is empty
         if ($baseBuilder->count() === 0) {
@@ -211,17 +239,25 @@ class DatabaseConstraint extends Constraint
         // show table results
         else {
 
-            // add debug conditionals
+            // add failure conditionals for debugging
             if ($this->failureConditionalCallback instanceof Closure) {
                 $baseBuilder = ($this->failureConditionalCallback)($baseBuilder);
             }
 
+            // determine selected fields
+            $selectedFields = !empty($this->failureFields)
+                ? $this->failureFields
+                : array_filter(array_map(fn ($item) => $item['column'] ?? null, $allWheres));
+
+            // get the results
             $results = $baseBuilder
-                ->select(array_filter(array_map(fn ($item) => $item['column'] ?? null, $allWheres)))
+                ->select($selectedFields)
                 ->cursor();
 
+            // count the results
             $resultsCount = $results->count();
 
+            // build the result string
             return PHP_EOL . 'Showing ' . min($this->show, $resultsCount) . ' of ' . $resultsCount . ' results: ' . PHP_EOL . json_encode($results->take($this->show), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
         }
     }
