@@ -28,12 +28,12 @@ class DatabaseConstraint extends Constraint
     /**
      * A callback to build the failure message.
      */
-    protected Closure $failureCallback;
+    protected Closure $failureDescriptionCallback;
 
     /**
      * The conditions to add when debugging a failure.
      */
-    protected Closure|null $debugCallback = null;
+    protected Closure|null $failureConditionalCallback = null;
 
     /**
      * The actual table entries count that will be checked against the expected count.
@@ -67,11 +67,11 @@ class DatabaseConstraint extends Constraint
     }
 
     /**
-     * Set conditions on the base builder for debugging.
+     * Set the conditions to add when debugging a failure.
      */
     public function debug(Closure|null $callback): static
     {
-        $this->debugCallback = $callback;
+        $this->failureConditionalCallback = $callback;
 
         return $this;
     }
@@ -83,7 +83,7 @@ class DatabaseConstraint extends Constraint
     {
         $this->matchCallback = fn () => $this->builder->exists();
 
-        $this->failureCallback = function ($table) {
+        $this->failureDescriptionCallback = function ($table) {
             return sprintf(
                 'a row in the table [%s] matches the query: ' . PHP_EOL . PHP_EOL . ' %s',
                 $table,
@@ -103,7 +103,7 @@ class DatabaseConstraint extends Constraint
     {
         $this->matchCallback = fn () => $this->builder->doesntExist();
 
-        $this->failureCallback = function ($table) {
+        $this->failureDescriptionCallback = function ($table) {
             return sprintf(
                 'a row in the table [%s] does not match the query: ' . PHP_EOL . PHP_EOL . ' %s',
                 $table,
@@ -135,7 +135,7 @@ class DatabaseConstraint extends Constraint
             };
         };
 
-        $this->failureCallback = function ($table) use ($count, $comparator) {
+        $this->failureDescriptionCallback = function ($table) use ($count, $comparator) {
             return sprintf(
                 'table [%s] actual count of %s is %s expected count of %s' . PHP_EOL . PHP_EOL . ' %s',
                 $table,
@@ -181,7 +181,7 @@ class DatabaseConstraint extends Constraint
      */
     protected function failureDescription(mixed $other): string
     {
-        return ($this->failureCallback)($other);
+        return ($this->failureDescriptionCallback)($other);
     }
 
     /**
@@ -212,8 +212,8 @@ class DatabaseConstraint extends Constraint
         else {
 
             // add debug conditionals
-            if ($this->debugCallback instanceof Closure) {
-                $baseBuilder = ($this->debugCallback)($baseBuilder);
+            if ($this->failureConditionalCallback instanceof Closure) {
+                $baseBuilder = ($this->failureConditionalCallback)($baseBuilder);
             }
 
             $results = $baseBuilder
