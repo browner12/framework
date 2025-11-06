@@ -11,9 +11,9 @@ use PHPUnit\Framework\Constraint\Constraint;
 class DatabaseConstraint extends Constraint
 {
     /**
-     * A callback to determine if a match exists.
+     * The builder instance with query constraints.
      */
-    protected Closure $matchCallback;
+    protected QueryBuilder $builder;
 
     /**
      * The number of results to show on a failed match.
@@ -21,9 +21,29 @@ class DatabaseConstraint extends Constraint
     protected int $show = 3;
 
     /**
-     * The builder instance with query constraints.
+     * A callback to determine if a match exists.
      */
-    protected QueryBuilder $builder;
+    protected Closure $matchCallback;
+
+    /**
+     * A callback to build the failure message.
+     */
+    protected Closure $failureCallback;
+
+    /**
+     * The conditions to add when debugging a failure.
+     */
+    protected Closure|null $debugCallback = null;
+
+    /**
+     * The actual table entries count that will be checked against the expected count.
+     */
+    protected int $actualCount = 0;
+
+    /**
+     * Determine if we should show the additional failure description.
+     */
+    protected bool $showAdditionalFailureDescription = false;
 
     /**
      * Create a new constraint instance.
@@ -31,17 +51,15 @@ class DatabaseConstraint extends Constraint
     public function __construct(
         EloquentBuilder|QueryBuilder $builder,
     ) {
-        if ($builder instanceof EloquentBuilder) {
-            $this->builder = $builder->toBase();
-        } else {
-            $this->builder = $builder;
-        }
+        $this->builder = $builder instanceof EloquentBuilder
+            ? $builder->toBase()
+            : $builder;
     }
 
     /**
      * Set the number of records that will be shown in the console in case of failure.
      */
-    public function shown(int $count): static
+    public function show(int $count): static
     {
         $this->show = $count;
 
@@ -49,14 +67,13 @@ class DatabaseConstraint extends Constraint
     }
 
     /**
-     * Run the assertion for this constraint.
+     * Set conditions on the base builder for debugging.
      */
-    public function runAssertion(): void
+    public function debug(Closure|null $callback): static
     {
-        Assert::assertThat(
-            $this->builder->from,
-            $this,
-        );
+        $this->debugCallback = $callback;
+
+        return $this;
     }
 
     /**
@@ -65,6 +82,16 @@ class DatabaseConstraint extends Constraint
     public function exists(): void
     {
         $this->matchCallback = fn () => $this->builder->exists();
+
+        $this->failureCallback = function ($table) {
+            return sprintf(
+                'a row in the table [%s] matches the query: ' . PHP_EOL . PHP_EOL . ' %s',
+                $table,
+                $this->toString(),
+            );
+        };
+
+        $this->showAdditionalFailureDescription = true;
 
         $this->runAssertion();
     }
@@ -76,6 +103,16 @@ class DatabaseConstraint extends Constraint
     {
         $this->matchCallback = fn () => $this->builder->doesntExist();
 
+        $this->failureCallback = function ($table) {
+            return sprintf(
+                'a row in the table [%s] does not match the query: ' . PHP_EOL . PHP_EOL . ' %s',
+                $table,
+                $this->toString(),
+            );
+        };
+
+        $this->showAdditionalFailureDescription = true;
+
         $this->runAssertion();
     }
 
@@ -86,7 +123,7 @@ class DatabaseConstraint extends Constraint
     {
         $this->matchCallback = function () use ($count, $comparator) {
 
-            $result = $this->builder->count();
+            $this->actualCount = $result = $this->builder->count();
 
             return match ($comparator) {
                 '>'         => $result > $count,
@@ -96,6 +133,17 @@ class DatabaseConstraint extends Constraint
                 '!=', '!==' => $result !== $count,
                 default     => $result === $count,
             };
+        };
+
+        $this->failureCallback = function ($table) use ($count, $comparator) {
+            return sprintf(
+                'table [%s] actual count of %s is %s expected count of %s' . PHP_EOL . PHP_EOL . ' %s',
+                $table,
+                $this->actualCount,
+                $comparator,
+                $count,
+                $this->toString(),
+            );
         };
 
         $this->runAssertion();
@@ -112,21 +160,28 @@ class DatabaseConstraint extends Constraint
     /**
      * Check if the data is found in the given table.
      */
-    public function matches(mixed $other): bool
+    protected function matches(mixed $other): bool
     {
         return ($this->matchCallback)();
     }
 
     /**
+     * Run the assertion for this constraint.
+     */
+    protected function runAssertion(): void
+    {
+        Assert::assertThat(
+            $this->builder->from,
+            $this,
+        );
+    }
+
+    /**
      * Get the description of the failure.
      */
-    public function failureDescription(mixed $other): string
+    protected function failureDescription(mixed $other): string
     {
-        return sprintf(
-            "a row in the table [%s] matches the query: " . PHP_EOL . PHP_EOL . " %s",
-            $other,
-            $this->toString(),
-        );
+        return ($this->failureCallback)($other);
     }
 
     /**
@@ -134,6 +189,10 @@ class DatabaseConstraint extends Constraint
      */
     protected function additionalFailureDescription(mixed $other): string
     {
+        if (!$this->showAdditionalFailureDescription) {
+            return '';
+        }
+
         $baseBuilder = clone $this->builder;
         $allWheres = $baseBuilder->wheres;
         $baseBuilder->wheres = [];
@@ -144,20 +203,26 @@ class DatabaseConstraint extends Constraint
         $baseBuilder->bindings['join'] = [];
         $baseBuilder->bindings['having'] = [];
 
+        // the table is empty
         if ($baseBuilder->count() === 0) {
             return PHP_EOL . 'The table [' . $other . '] is empty.';
         }
 
-        // look for similar results to the given query based on the first where condition
+        // show table results
         else {
 
-            $similarResults = $baseBuilder
+            // add debug conditionals
+            if ($this->debugCallback instanceof Closure) {
+                $baseBuilder = ($this->debugCallback)($baseBuilder);
+            }
+
+            $results = $baseBuilder
                 ->select(array_filter(array_map(fn ($item) => $item['column'] ?? null, $allWheres)))
                 ->cursor();
 
-            $similarResultsCount = $similarResults->count();
+            $resultsCount = $results->count();
 
-            return PHP_EOL . 'Found ' . $similarResultsCount . ' similar results: ' . PHP_EOL . json_encode($similarResults->take($this->show), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+            return PHP_EOL . 'Showing ' . min($this->show, $resultsCount) . ' of ' . $resultsCount . ' results: ' . PHP_EOL . json_encode($results->take($this->show), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
         }
     }
 
@@ -174,7 +239,7 @@ class DatabaseConstraint extends Constraint
             ' having ',
         ];
 
-        $replace = array_map(fn($item) => PHP_EOL . $item, $search);
+        $replace = array_map(fn ($item) => PHP_EOL . $item, $search);
 
         return str_replace($search, $replace, $this->builder->toRawSql());
     }
