@@ -62,7 +62,7 @@ class DatabaseConstraint extends Constraint
         EloquentBuilder|QueryBuilder $builder,
     ) {
         $this->builder = $builder instanceof EloquentBuilder
-            ? $builder->toBase()
+            ? $builder->withoutGlobalScopes()->toBase()
             : $builder;
     }
 
@@ -114,6 +114,26 @@ class DatabaseConstraint extends Constraint
         $this->showAdditionalFailureDescription = true;
 
         $this->runAssertion();
+    }
+
+    /**
+     * Execute the constraint checking if the builder exists and is soft deleted.
+     */
+    public function softDeleted(): void
+    {
+        $this->builder = $this->builder->whereNotNull('deleted_at');
+
+        $this->exists();
+    }
+
+    /**
+     * Execute the constraint checking if the builder exists and is not soft deleted.
+ */
+    public function notSoftDeleted(): void
+    {
+        $this->builder = $this->builder->whereNull('deleted_at');
+
+        $this->exists();
     }
 
     /**
