@@ -4,6 +4,7 @@ namespace Illuminate\View;
 
 use ArrayAccess;
 use BadMethodCallException;
+use Closure;
 use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Contracts\Support\MessageProvider;
@@ -60,6 +61,13 @@ class View implements ArrayAccess, Htmlable, Stringable, ViewContract
     protected $path;
 
     /**
+     * The closure to transform the contents.
+     *
+     * @var \Closure|null
+     */
+    protected ?Closure $transform = null;
+
+    /**
      * Create a new view instance.
      *
      * @param  \Illuminate\View\Factory  $factory
@@ -76,6 +84,19 @@ class View implements ArrayAccess, Htmlable, Stringable, ViewContract
         $this->factory = $factory;
 
         $this->data = $data instanceof Arrayable ? $data->toArray() : (array) $data;
+    }
+
+    /**
+     * Define a closure to transform the view contents after they are rendered.
+     *
+     * @param  callable  $callback
+     * @return $this
+     */
+    public function transform(callable $callback): static
+    {
+        $this->transform = Closure::fromCallable($callback);
+
+        return $this;
     }
 
     /**
@@ -189,6 +210,10 @@ class View implements ArrayAccess, Htmlable, Stringable, ViewContract
         $this->factory->callComposer($this);
 
         $contents = $this->getContents();
+
+        if (is_callable($this->transform)) {
+            $contents = ($this->transform)($contents);
+        }
 
         // Once we've finished rendering the view, we'll decrement the render count
         // so that each section gets flushed out next time a view is created and
